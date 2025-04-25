@@ -1,52 +1,48 @@
 import requests
 import time
-import discord
-from flask import Flask
+from keep_alive import keep_alive
 
-app = Flask(__name__)
+# Your list of Roblox user IDs
+user_ids = [2346725415, 5589770247, 4456108587, lol5xd19qz8sf6g2x3w7]
+webhook_url = 'https://discord.com/api/webhooks/1364600481715982426/PNOfhEBw8RKwaWkhvzJtEmj_Si6wmJ4vpBXEJn9Ho6iRPSYVltFSV7HIrZ4CDjrIa2Lv'
 
-# Your Roblox user ID(s)
-TARGET_USER_IDS = [2346725415, 5589770247, 4456108587, 3023198676]  # Replace with actual player IDs
+online_users = set()
 
-# Your Discord webhook URL
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1364600481715982426/PNOfhEBw8RKwaWkhvzJtEmj_Si6wmJ4vpBXEJn9Ho6iRPSYVltFSV7HIrZ4CDjrIa2Lv"
+def check_users():
+    global online_users
+    for user_id in user_ids:
+        try:
+            response = requests.get(f'https://api.roblox.com/users/{user_id}')
+            if response.status_code == 200:
+                user_info = response.json()
+                username = user_info.get("Username", f"User ID: {user_id}")
+                presence = requests.post(
+                    "https://presence.roblox.com/v1/presence/users",
+                    json={"userIds": [user_id]},
+                    headers={"Content-Type": "application/json"}
+                ).json()
+                is_online = presence["userPresences"][0]["userPresenceType"] != 0
 
-# Roblox API to get players in the game
-ROBLOX_API_URL = "https://api.roblox.com/users/{user_id}/onlinestatus"
+                if is_online and user_id not in online_users:
+                    online_users.add(user_id)
+                    ping = f"{username} is now **online**!"
+                    send_webhook(ping)
+                elif not is_online and user_id in online_users:
+                    online_users.remove(user_id)
+                    ping = f"{username} is now **offline**."
+                    send_webhook(ping)
+        except Exception as e:
+            print("Error:", e)
 
-# Discord webhook function
-def send_discord_notification(player_name):
-    data = {
-        "content": f"**{player_name}** has joined the game!"
-    }
-    response = requests.post(DISCORD_WEBHOOK_URL, json=data)
-    return response
+def send_webhook(message):
+    payload = {"content": message}
+    try:
+        requests.post(webhook_url, json=payload)
+    except Exception as e:
+        print("Failed to send webhook:", e)
 
-# Function to check if a player is in the game
-def check_player_online(user_id):
-    response = requests.get(ROBLOX_API_URL.format(user_id=user_id))
-    data = response.json()
+keep_alive()
 
-    # Check if the user is currently online
-    if data.get('IsOnline') == True:
-        return data.get('PlayerName')  # Return the player name if online
-    return None
-
-@app.route('/')
-def index():
-    online_players = []
-
-    for user_id in TARGET_USER_IDS:
-        player_name = check_player_online(user_id)
-        if player_name:
-            online_players.append(player_name)
-            send_discord_notification(player_name)
-
-    if online_players:
-        return f"Notified about the following players: {', '.join(online_players)}"
-    else:
-        return "No players online right now."
-
-# Keep the Flask app running
-if __name__ == '__main__':
-    app.run(debug=True)
+while True:
+    check_users()
+    time.sleep(300)  # check every 5 minutes
